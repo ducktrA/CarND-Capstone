@@ -22,8 +22,8 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-CORRIDOR = math.degrees(70.) # within this angle to the left and right of the ego we accept base_waypoints
+LOOKAHEAD_WPS = 50 # Number of waypoints we will publish. You can change this number
+CORRIDOR = math.degrees(60.) # within this angle to the left and right of the ego we accept base_waypoints
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -43,41 +43,44 @@ class WaypointUpdater(object):
         self.pose = None # pose.position, pose.orientation (quaternion)
         self.base_waypoints = None # list of pose's.
 
-        rospy.spin()
+        self.loop()
+
+    def loop(self):
+        # publish updates on fixed frequency as in dbw_node
+
+        rate = rospy.Rate(50) # 50Hz
+        while not rospy.is_shutdown():
+            if self.base_waypoints != None and self.pose != None:
+                (x,y,z) = self.quaternion_to_euler_angle()
+
+                closest = self.closest_wp(z)
+                
+                points_ahead = self.get_next_wps(closest, z)
+                rospy.loginfo("Closest Base WP: %d Points Ahead: %d", closest, points_ahead)
+
+                # can copy waypoints only in ascending order
+                assert points_ahead > closest
+                
+                for i in range(closest, points_ahead):
+                    self.set_waypoint_velocity(self.base_waypoints, i, 5.)
+
+                # TODO this is a very basic setup of the Lane
+                finalwps = Lane()
+                finalwps.waypoints = self.base_waypoints[closest: points_ahead]
+
+                self.final_waypoints_pub.publish(finalwps)
+
+            rate.sleep()
 
     def pose_cb(self, msg):
         # TODO: Implement
-        
         self.pose = msg.pose
-
-        (x,y,z) = self.quaternion_to_euler_angle()
-        
-        # rospy.loginfo("X: %f Y: %f Z: %f", x,y,z)
-
-        if self.base_waypoints != None:
-            closest = self.closest_wp(z)
-            rospy.loginfo("Closest Base WP: %d", closest)
-
-
-            self.set_waypoint_velocity(self.base_waypoints, closest, 10.)
-            
-
-            finalwps = Lane()
-
-            finalwps.waypoints = self.base_waypoints[closest: closest+1]
-
-            self.final_waypoints_pub.publish(finalwps)
-
         pass
 
     def waypoints_cb(self, waypoints):
         # TODO: Implement
-
-        rospy.loginfo("waypoints_cb")
-
         self.base_waypoints = waypoints.waypoints
-        rospy.loginfo("waypoints received: %d", len(self.base_waypoints))
-
+        # rospy.loginfo("waypoints received: %d", len(self.base_waypoints))
         pass
 
     def traffic_cb(self, msg):
@@ -122,6 +125,28 @@ class WaypointUpdater(object):
 
         # print("closest point ahead: ", closest)
         return closest
+
+    def get_next_wps(self, closest, z):
+
+        direction = 1 # 1 count upwards, -1 count downwards
+        alphal = lambda a, b: math.atan2((a.y - b.y), (a.x - b.x))
+        closest_wp = self.base_waypoints[closest].pose.pose.position
+        i = 1
+        n = 0
+
+        while i < LOOKAHEAD_WPS:
+            n = (closest + i * direction) % len(self.base_waypoints)
+            a = alphal(self.base_waypoints[n].pose.pose.position, closest_wp)
+
+            if ((z - CORRIDOR) < a) and ((z+CORRIDOR) > a):
+                # go ahead 
+                i = i+1
+            else:
+                # change direction
+                direction = -1
+
+        return n
+
 
     def quaternion_to_euler_angle(self):
         # returns roll, pitch, yaw in radians

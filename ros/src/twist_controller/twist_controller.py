@@ -4,11 +4,26 @@ ONE_MPH = 0.44704
 
 
 class Controller(object):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, veloPID, yawCont):
+
+    	self.veloPID = veloPID
+    	self.yawCont = yawCont
+
         # TODO: Implement
         pass
 
-    def control(self, *args, **kwargs):
-        # TODO: Change the arg, kwarg list to suit your needs
+    def control(self, lin_vel, ang_vel, cur_vel, is_dbw_enabled, delta_t):
+
+    	if is_dbw_enabled != True:
+    		self.veloPID.reset()
+
+    	vel_error = lin_vel - cur_vel * ONE_MPH
+    	print("lin_vel:", lin_vel , "cur_vel: ", cur_vel)
+
+    	throttle = self.veloPID.step(vel_error, delta_t)
+    	steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
+    	brake = 0.
+
         # Return throttle, brake, steer
-        return 1., 0., 0.
+        return throttle, brake, steer
+        #return 0.5, 0., 0.
