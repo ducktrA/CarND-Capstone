@@ -7,6 +7,7 @@ from geometry_msgs.msg import TwistStamped
 import math
 
 from twist_controller import Controller
+from pid import PID
 
 '''
 You can build this node only after you have built (or partially built) the `waypoint_updater` node.
@@ -58,6 +59,14 @@ class DBWNode(object):
 
         # TODO: Subscribe to all the topics you need to
 
+        rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
+        rospy.Subscriber('/vehicle/dbw_enables', Bool, self.dbw_enabled_cb)
+        rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
+
+        self.veloPID = PID(0.1, 0.1, 0.1, 0., 10.)
+
+        self.is_dbw_enabled = True
+
         self.loop()
 
     def loop(self):
@@ -72,7 +81,26 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             # if <dbw is enabled>:
             #   self.publish(throttle, brake, steer)
+
+
+            if self.is_dbw_enabled:
+                #self.publish(throttle, brake, steer)
+                a = 1
+            else: # reset controllers to smoothly take over
+                self.veloPID.reset()
+
+
             rate.sleep()
+
+    def current_velocity_cb(self, msg):
+        pass
+
+    def dbw_enabled_cb(self, msg):
+        pass
+
+    def twist_cmd_cb(self, msg):
+
+        pass
 
     def publish(self, throttle, brake, steer):
         tcmd = ThrottleCmd()

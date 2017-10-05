@@ -3,6 +3,7 @@
 import rospy
 from geometry_msgs.msg import PoseStamped
 from styx_msgs.msg import Lane, Waypoint
+from std_msgs.msg import Int32
 
 import math
 
@@ -22,7 +23,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-
+CORRIDOR = math.degrees(70.) # within this angle to the left and right of the ego we accept base_waypoints
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -33,19 +34,50 @@ class WaypointUpdater(object):
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
 
-
+        # rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
+        
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
+
+        self.pose = None # pose.position, pose.orientation (quaternion)
+        self.base_waypoints = None # list of pose's.
 
         rospy.spin()
 
     def pose_cb(self, msg):
         # TODO: Implement
+        
+        self.pose = msg.pose
+
+        (x,y,z) = self.quaternion_to_euler_angle()
+        
+        # rospy.loginfo("X: %f Y: %f Z: %f", x,y,z)
+
+        if self.base_waypoints != None:
+            closest = self.closest_wp(z)
+            rospy.loginfo("Closest Base WP: %d", closest)
+
+
+            self.set_waypoint_velocity(self.base_waypoints, closest, 10.)
+            
+
+            finalwps = Lane()
+
+            finalwps.waypoints = self.base_waypoints[closest: closest+1]
+
+            self.final_waypoints_pub.publish(finalwps)
+
         pass
 
     def waypoints_cb(self, waypoints):
         # TODO: Implement
+
+        rospy.loginfo("waypoints_cb")
+
+        self.base_waypoints = waypoints.waypoints
+        rospy.loginfo("waypoints received: %d", len(self.base_waypoints))
+
         pass
 
     def traffic_cb(self, msg):
@@ -70,6 +102,53 @@ class WaypointUpdater(object):
             wp1 = i
         return dist
 
+    def closest_wp(self, z):
+        dist = 999999999.
+        closest = None
+
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        alphal = lambda a, b: math.atan2((a.y - b.y), (a.x - b.x))
+
+        #print("len waypoints: ", len(self.base_waypoints))
+
+        for i in range(0, len(self.base_waypoints)):
+            d = dl(self.base_waypoints[i].pose.pose.position, self.pose.position)
+            a = alphal(self.base_waypoints[i].pose.pose.position, self.pose.position)
+
+            # TODO: check if there is an offset
+            if d < dist and ((z - CORRIDOR) < a) and ((z+CORRIDOR) > a):
+                dist = d
+                closest = i
+
+        # print("closest point ahead: ", closest)
+        return closest
+
+    def quaternion_to_euler_angle(self):
+        # returns roll, pitch, yaw in radians
+        # w, x, y, z):
+        w = self.pose.orientation.w
+        x = self.pose.orientation.x
+        y = self.pose.orientation.y
+        z = self.pose.orientation.z
+
+        # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+
+        ysqr = y * y
+        
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + ysqr)
+        X = math.atan2(t0, t1)
+        
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        Y = math.asin(t2)
+        
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (ysqr + z * z)
+        Z = math.atan2(t3, t4)
+        
+        return X, Y, Z
 
 if __name__ == '__main__':
     try:
