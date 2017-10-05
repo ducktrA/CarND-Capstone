@@ -58,14 +58,14 @@ class DBWNode(object):
         # TODO: Subscribe to all the topics you need to
 
         rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
-        rospy.Subscriber('/vehicle/dbw_enables', Bool, self.dbw_enabled_cb)
+        rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_enabled_cb)
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
       
         # TODO maybe adjust min_speed
 
         min_speed = 0.1
         yawCont = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
-        veloPID = PID(0.1, 0.001, 0.1, 0., 1.0)
+        veloPID = PID(0.05, 0.001, 0.05, -1., 1.0)
 
         # TODO: Create `TwistController` object
         # self.controller = TwistController(<Arguments you wish to provide>)
@@ -91,10 +91,9 @@ class DBWNode(object):
             #                                                     <any other argument you need>)
             
             throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_vel, self.is_dbw_enabled, 1./50.)
-            rospy.loginfo("Throttle, Brake, Steering: %f, %f, %f" , throttle, brake, steering)
-
+        
             if self.is_dbw_enabled:
-                rospy.loginfo("DBW active - publishing")
+                rospy.loginfo("Throttle, Brake, Steering: %f, %f, %f" , throttle, brake, steering)
                 self.publish(throttle, brake, steering)
 
             rate.sleep()
@@ -105,6 +104,8 @@ class DBWNode(object):
 
     def dbw_enabled_cb(self, msg):
         self.is_dbw_enabled = msg.data
+        #rospy.loginfo("DBW active: ", msg)
+        print(msg)
         pass
 
     def twist_cmd_cb(self, msg):

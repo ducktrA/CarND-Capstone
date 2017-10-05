@@ -14,16 +14,22 @@ class Controller(object):
 
     def control(self, lin_vel, ang_vel, cur_vel, is_dbw_enabled, delta_t):
 
-    	if is_dbw_enabled != True:
-    		self.veloPID.reset()
+        cur_vel = cur_vel * ONE_MPH
+        vel_error = lin_vel - cur_vel
+ 
+        if is_dbw_enabled != True:
+            self.veloPID.reset()
+            vel_error = 0
 
-    	vel_error = lin_vel - cur_vel * ONE_MPH
-    	print("lin_vel:", lin_vel , "cur_vel: ", cur_vel)
+        print("lin_vel:", lin_vel , "cur_vel: ", cur_vel)
 
-    	throttle = self.veloPID.step(vel_error, delta_t)
-    	steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
-    	brake = 0.
+        throttle = self.veloPID.step(vel_error, delta_t)
+        steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
+        brake = 0.
+
+        if throttle <= 0.:
+        	throttle = 0
+        	brake = abs(throttle) * 2500
 
         # Return throttle, brake, steer
         return throttle, brake, steer
-        #return 0.5, 0., 0.

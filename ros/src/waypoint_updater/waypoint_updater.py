@@ -66,7 +66,7 @@ class WaypointUpdater(object):
 
                 # TODO this is a very basic setup of the Lane
                 finalwps = Lane()
-                finalwps.waypoints = self.base_waypoints[closest: points_ahead]
+                finalwps.waypoints = self.base_waypoints[closest+1: points_ahead]
 
                 self.final_waypoints_pub.publish(finalwps)
 
