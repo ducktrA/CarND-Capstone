@@ -63,15 +63,15 @@ class DBWNode(object):
       
         # TODO maybe adjust min_speed
 
-        self.frequency = 50
+        self.frequency = 10
 
-        min_speed = brake_deadband # ??
+        min_speed = 0 # brake_deadband # ??
         yawCont = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
         veloPID = PID(0.2, 0.001, 0.05, decel_limit, accel_limit)
         
 
         # TODO: Create `TwistController` object
-        self.controller = Controller(veloPID, yawCont, 1./self.frequency)
+        self.controller = Controller(veloPID, yawCont)
 
         self.cur_linvel = 0
         self.lin_vel = 0
@@ -97,15 +97,19 @@ class DBWNode(object):
             #                                                     <dbw status>,
             #                                                     <any other argument you need>)
             
-            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled)
+            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled, 1./self.frequency)
         
+             
+            # steering = -0.2 --> vehicle goes to the right
+            # steering = 0.2 --> vehicle goes to the left
+            
             if self.is_dbw_enabled:
-                #rospy.loginfo("Throttle, Brake, Steering: %f, %f, %f" , throttle, brake, steering)
                 self.publish(throttle, brake, steering)
 
             rate.sleep()
 
     def current_velocity_cb(self, msg):
+        assert(msg != None)
         self.cur_linvel = msg.twist.linear.x
         pass
 
@@ -116,6 +120,7 @@ class DBWNode(object):
         pass
 
     def twist_cmd_cb(self, msg):
+        assert(msg != None)
         self.lin_vel = msg.twist.linear.x
         self.ang_vel = msg.twist.angular.z
         pass
@@ -129,7 +134,7 @@ class DBWNode(object):
         tcmd.pedal_cmd_type = ThrottleCmd.CMD_PERCENT
         tcmd.pedal_cmd = throttle
 
-        if throttle != self.throttle_before:
+        if abs(throttle - self.throttle_before) > 0.05:
             self.throttle_before = throttle
             self.throttle_pub.publish(tcmd)
 

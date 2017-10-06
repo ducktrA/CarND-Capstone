@@ -43,13 +43,14 @@ class WaypointUpdater(object):
         self.pose = None # pose.position, pose.orientation (quaternion)
         self.base_waypoints = None # list of pose's.
         self.closest_before = 0
+        self.frame_id = None
 
         self.loop()
 
     def loop(self):
         # publish updates on fixed frequency as in dbw_node
 
-        rate = rospy.Rate(40) # 50Hz
+        rate = rospy.Rate(10) # 50Hz
         while not rospy.is_shutdown():
             if self.base_waypoints != None and self.pose != None:
                 #(x,y,z) = self.quaternion_to_euler_angle()
@@ -58,21 +59,19 @@ class WaypointUpdater(object):
 
                 # TODO wrap it over when it reaches the end
                 points_ahead = min(closest + LOOKAHEAD_WPS, len(self.base_waypoints))
-                rospy.loginfo("Closest Base WP: %d Points Ahead: %d", closest, points_ahead)
-                
-                #for i in range(closest, points_ahead):
-                #    self.set_waypoint_velocity(self.base_waypoints, i, 5.)
+                #rospy.loginfo("Closest Base WP: %d Points Ahead: %d", closest, points_ahead)
 
                 # TODO this is a very basic setup of the Lane
                 finalwps = Lane()
+                finalwps.header.stamp = rospy.Time.now()
+                finalwps.header.frame_id = self.frame_id
 
                 for i in range(1, LOOKAHEAD_WPS):
                     if i % 10 == 0:
-                        self.set_waypoint_velocity(self.base_waypoints, i + closest, 5.)
+                        self.set_waypoint_velocity(self.base_waypoints, i + closest, 3.)
                         finalwps.waypoints.append(self.base_waypoints[i + closest])
 
                 self.closest_before = closest
-
                 self.final_waypoints_pub.publish(finalwps)
 
             rate.sleep()
@@ -85,6 +84,7 @@ class WaypointUpdater(object):
     def waypoints_cb(self, waypoints):
         # TODO: Implement
         self.base_waypoints = waypoints.waypoints
+        self.frame_id = waypoints.header.frame_id
         # rospy.loginfo("waypoints received: %d", len(self.base_waypoints))
         pass
 
@@ -120,6 +120,9 @@ class WaypointUpdater(object):
         # limit the search space
         upper = min(len(self.base_waypoints), closest_before + 700)
         lower = max(0, closest_before - 50)
+
+        lower = 0
+        upper = len(self.base_waypoints)
 
         for i in range(lower, upper):
             d = dl(self.base_waypoints[i].pose.pose.position, self.pose.position)
@@ -158,7 +161,16 @@ class WaypointUpdater(object):
 
         return n
     '''
+    # actually not necessary 
+    def quat_to_euler(self):
+        quaternion = (self.pose.orientation.x, self.pose.orientation.y, self.pose.orientation.z, self.pose.orientation.w)
+        euler = tf.transformations.euler_from_quaternion(quaternion)
+        roll = euler[0]
+        pitch = euler[1]
+        yaw = euler[2]
 
+        return roll, pitch, yaw
+        
     def quaternion_to_euler_angle(self):
         # returns roll, pitch, yaw in radians
         # w, x, y, z):
