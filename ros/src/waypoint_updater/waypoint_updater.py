@@ -68,10 +68,29 @@ class WaypointUpdater(object):
                 finalwps.header.stamp = rospy.Time.now()
                 finalwps.header.frame_id = self.frame_id
 
+                i = 0
+                idx = closest
+
+                while i < LOOKAHEAD_WPS:
+                    if idx >= len(self.base_waypoints)-1:
+                        idx = 0
+
+                    if i % 5 == 0:
+                        self.set_waypoint_velocity(self.base_waypoints, idx, 11.11)
+                        finalwps.waypoints.append(self.base_waypoints[idx])
+
+                    i = i + 1
+                    idx = idx + 1
+
+                    if idx >= len(self.base_waypoints):
+                        closest
+
+                '''
                 for i in range(1, LOOKAHEAD_WPS):
                     if i % 5 == 0:
                         self.set_waypoint_velocity(self.base_waypoints, i + closest, 11.11)
                         finalwps.waypoints.append(self.base_waypoints[i + closest])
+                '''
 
                 self.closest_before = closest
                 self.final_waypoints_pub.publish(finalwps)
