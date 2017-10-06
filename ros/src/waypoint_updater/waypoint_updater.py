@@ -22,7 +22,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 50 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 66 # Number of waypoints we will publish. You can change this number
 CORRIDOR = math.degrees(60.) # within this angle to the left and right of the ego we accept base_waypoints
 
 class WaypointUpdater(object):
@@ -48,7 +48,7 @@ class WaypointUpdater(object):
     def loop(self):
         # publish updates on fixed frequency as in dbw_node
 
-        rate = rospy.Rate(50) # 50Hz
+        rate = rospy.Rate(30) # 50Hz
         while not rospy.is_shutdown():
             if self.base_waypoints != None and self.pose != None:
                 (x,y,z) = self.quaternion_to_euler_angle()

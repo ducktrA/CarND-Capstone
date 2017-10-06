@@ -63,24 +63,31 @@ class DBWNode(object):
       
         # TODO maybe adjust min_speed
 
-        min_speed = 0.1
+        self.frequency = 50
+
+        min_speed = brake_deadband # ??
         yawCont = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
-        veloPID = PID(0.05, 0.001, 0.05, -1., 1.0)
+        veloPID = PID(0.2, 0.001, 0.05, decel_limit, accel_limit)
+        
 
         # TODO: Create `TwistController` object
-        # self.controller = TwistController(<Arguments you wish to provide>)
-        self.controller = Controller(veloPID, yawCont)
+        self.controller = Controller(veloPID, yawCont, 1./self.frequency)
 
-        self.cur_vel = 0
+        self.cur_linvel = 0
         self.lin_vel = 0
         self.ang_vel = 0
+        
+        self.is_dbw_enabled = False # the simulator comes all the time with the "manual" box ticked
 
-        self.is_dbw_enabled = True
+        self.throttle_before = 0.0
+        self.brake_before = 0.0
+        self.steering_before = 0.0
 
         self.loop()
 
     def loop(self):
-        rate = rospy.Rate(50) # 50Hz
+        
+        rate = rospy.Rate(self.frequency) # 50Hz
         while not rospy.is_shutdown():
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
             # You should only publish the control commands if dbw is enabled
@@ -90,16 +97,16 @@ class DBWNode(object):
             #                                                     <dbw status>,
             #                                                     <any other argument you need>)
             
-            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_vel, self.is_dbw_enabled, 1./50.)
+            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled)
         
             if self.is_dbw_enabled:
-                rospy.loginfo("Throttle, Brake, Steering: %f, %f, %f" , throttle, brake, steering)
+                #rospy.loginfo("Throttle, Brake, Steering: %f, %f, %f" , throttle, brake, steering)
                 self.publish(throttle, brake, steering)
 
             rate.sleep()
 
     def current_velocity_cb(self, msg):
-        self.cur_vel = msg.twist.linear.x
+        self.cur_linvel = msg.twist.linear.x
         pass
 
     def dbw_enabled_cb(self, msg):
@@ -110,27 +117,38 @@ class DBWNode(object):
 
     def twist_cmd_cb(self, msg):
         self.lin_vel = msg.twist.linear.x
-        # TODO check if this is right value
         self.ang_vel = msg.twist.angular.z
         pass
 
     def publish(self, throttle, brake, steer):
+
+        # somehow it works better when the frequency of updates is lower, issuing only updates
+
         tcmd = ThrottleCmd()
         tcmd.enable = True
         tcmd.pedal_cmd_type = ThrottleCmd.CMD_PERCENT
         tcmd.pedal_cmd = throttle
-        self.throttle_pub.publish(tcmd)
+
+        if throttle != self.throttle_before:
+            self.throttle_before = throttle
+            self.throttle_pub.publish(tcmd)
 
         scmd = SteeringCmd()
         scmd.enable = True
         scmd.steering_wheel_angle_cmd = steer
-        self.steer_pub.publish(scmd)
+
+        if steer != self.steering_before:
+            self.steering_before = steer
+            self.steer_pub.publish(scmd)
 
         bcmd = BrakeCmd()
         bcmd.enable = True
         bcmd.pedal_cmd_type = BrakeCmd.CMD_TORQUE
         bcmd.pedal_cmd = brake
-        self.brake_pub.publish(bcmd)
+
+        if brake != self.brake_before:
+            self.brake_before = brake
+            self.brake_pub.publish(bcmd)
 
 
 if __name__ == '__main__':
