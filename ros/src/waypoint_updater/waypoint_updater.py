@@ -22,7 +22,7 @@ as well as to verify your TL classifier.
 TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
-LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
+LOOKAHEAD_WPS = 100 # Number of waypoints we will publish. You can change this number
 CORRIDOR = math.degrees(60.) # within this angle to the left and right of the ego we accept base_waypoints
 
 class WaypointUpdater(object):
@@ -45,12 +45,14 @@ class WaypointUpdater(object):
         self.closest_before = 0
         self.frame_id = None
 
+        self.frequency = 10
+
         self.loop()
 
     def loop(self):
         # publish updates on fixed frequency as in dbw_node
 
-        rate = rospy.Rate(10) # 50Hz
+        rate = rospy.Rate(self.frequency) # 50Hz
         while not rospy.is_shutdown():
             if self.base_waypoints != None and self.pose != None:
                 #(x,y,z) = self.quaternion_to_euler_angle()
@@ -67,8 +69,8 @@ class WaypointUpdater(object):
                 finalwps.header.frame_id = self.frame_id
 
                 for i in range(1, LOOKAHEAD_WPS):
-                    if i % 10 == 0:
-                        self.set_waypoint_velocity(self.base_waypoints, i + closest, 3.)
+                    if i % 5 == 0:
+                        self.set_waypoint_velocity(self.base_waypoints, i + closest, 11.11)
                         finalwps.waypoints.append(self.base_waypoints[i + closest])
 
                 self.closest_before = closest
@@ -170,7 +172,7 @@ class WaypointUpdater(object):
         yaw = euler[2]
 
         return roll, pitch, yaw
-        
+
     def quaternion_to_euler_angle(self):
         # returns roll, pitch, yaw in radians
         # w, x, y, z):

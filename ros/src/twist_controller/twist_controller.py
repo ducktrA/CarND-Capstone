@@ -14,12 +14,12 @@ class Controller(object):
 
     	self.lp_throttle = LowPassFilter(0.2, 0.1)
 
-        # TODO: Implement
-        pass
-
     def control(self, lin_vel, ang_vel, cur_vel, is_dbw_enabled, delta_t):
+    	# cur_vel is in m/s
+    	
+    	print("cur_vel: %f", cur_vel)
 
-        cur_vel = cur_vel * ONE_MPH
+        #cur_vel = cur_vel
         vel_error = lin_vel - cur_vel
 
         throttle = 0.0
