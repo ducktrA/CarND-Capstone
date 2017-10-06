@@ -70,7 +70,7 @@ class DBWNode(object):
         veloPID = PID(0.2, 0.001, 0.05, decel_limit, accel_limit)
         
 
-        # TODO: Create `TwistController` object
+        #  TODO: Create `TwistController` object
         self.controller = Controller(veloPID, yawCont)
 
         self.cur_linvel = 0
@@ -102,7 +102,7 @@ class DBWNode(object):
              
             # steering = -0.2 --> vehicle goes to the right
             # steering = 0.2 --> vehicle goes to the left
-            
+
             if self.is_dbw_enabled:
                 self.publish(throttle, brake, steering)
 
