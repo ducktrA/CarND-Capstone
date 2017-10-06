@@ -21,7 +21,7 @@ class Controller(object):
         # TODO: Implement
         pass
 
-    def control(self, lin_vel, ang_vel, cur_vel, cur_angvel, is_dbw_enabled):
+    def control(self, lin_vel, ang_vel, cur_vel, is_dbw_enabled):
 
         cur_vel = cur_vel * ONE_MPH
         vel_error = lin_vel - cur_vel
@@ -35,7 +35,7 @@ class Controller(object):
             self.steering_controller.reset()
             vel_error = 0
         else:
-	        print("target ang_vel:", ang_vel , "cur_angvel: ", cur_angvel)
+	        print("target ang_vel:", ang_vel)
 
 	        throttle = self.veloPID.step(vel_error, self.delta_t)
 	        throttle = self.lp_throttle.filt(throttle)
