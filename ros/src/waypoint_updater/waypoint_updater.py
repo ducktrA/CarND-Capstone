@@ -24,6 +24,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 100 # Number of waypoints we will publish. You can change this number
 CORRIDOR = math.degrees(60.) # within this angle to the left and right of the ego we accept base_waypoints
+INVERSE_WP_DENSITY = 5
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -34,8 +35,8 @@ class WaypointUpdater(object):
 
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
 
-        # rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
-        
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
+
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
@@ -46,12 +47,16 @@ class WaypointUpdater(object):
         self.frame_id = None
 
         self.frequency = 10
-
+        # TODO: Needs to be adjusted based on target speed
+        self.tl_slow_down_dst_wp = 150
+        self.tl_stopp_dst_wp = 10
+        self.tl_idx = -1 #nearest traffic light with red status
+        self.target_speed = (50.0*1000)/(60*60) #[m/s] = [km/h] * 60*60/1000 (e.g.40 km/h = 11.11m/s)
         self.loop()
 
     def loop(self):
         # publish updates on fixed frequency as in dbw_node
-
+        rospy.loginfo("loop")
         rate = rospy.Rate(self.frequency) # 50Hz
         while not rospy.is_shutdown():
             if self.base_waypoints != None and self.pose != None:
@@ -75,22 +80,25 @@ class WaypointUpdater(object):
                     if idx >= len(self.base_waypoints)-1:
                         idx = 0
 
-                    if i % 5 == 0:
-                        self.set_waypoint_velocity(self.base_waypoints, idx, 11.11)
+                    # improve performance by considering only every x waypoints
+                    speed_reduction = 0
+                    # skip a few waypoints to improve performance but never skip traffic light waypoints (tl_idx)
+                    if (i % INVERSE_WP_DENSITY) == 0 or idx == self.tl_idx:
+                        if self.tl_idx != -1:
+                            dst = self.tl_idx - idx
+                            if dst > 0:
+                                if dst < self.tl_stopp_dst_wp:
+                                    dst = 0
+                                speed_reduction = 1-min((dst*dst)/(self.tl_slow_down_dst_wp*self.tl_slow_down_dst_wp), 1) # deaccelerate in the proximity of 10 waypoints around the traffic light
+                        velocity = self.target_speed * (1- speed_reduction)
+                        self.set_waypoint_velocity(self.base_waypoints, idx, velocity)
                         finalwps.waypoints.append(self.base_waypoints[idx])
+                        rospy.loginfo("wp: %d => v = %d", idx, velocity)
 
                     i = i + 1
                     idx = idx + 1
 
-                    if idx >= len(self.base_waypoints):
-                        closest
 
-                '''
-                for i in range(1, LOOKAHEAD_WPS):
-                    if i % 5 == 0:
-                        self.set_waypoint_velocity(self.base_waypoints, i + closest, 11.11)
-                        finalwps.waypoints.append(self.base_waypoints[i + closest])
-                '''
 
                 self.closest_before = closest
                 self.final_waypoints_pub.publish(finalwps)
@@ -111,6 +119,9 @@ class WaypointUpdater(object):
 
     def traffic_cb(self, msg):
         # TODO: Callback for /traffic_waypoint message. Implement
+        if msg.data != self.tl_idx:
+            self.tl_idx = msg.data
+
         pass
 
     def obstacle_cb(self, msg):
@@ -174,7 +185,7 @@ class WaypointUpdater(object):
             a = alphal(self.base_waypoints[n].pose.pose.position, closest_wp)
 
             if ((z - CORRIDOR) < a) and ((z+CORRIDOR) > a):
-                # go ahead 
+                # go ahead
                 i = i+1
             else:
                 # change direction
@@ -182,7 +193,7 @@ class WaypointUpdater(object):
 
         return n
     '''
-    # actually not necessary 
+    # actually not necessary
     def quat_to_euler(self):
         quaternion = (self.pose.orientation.x, self.pose.orientation.y, self.pose.orientation.z, self.pose.orientation.w)
         euler = tf.transformations.euler_from_quaternion(quaternion)
@@ -203,20 +214,20 @@ class WaypointUpdater(object):
         # https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
 
         ysqr = y * y
-        
+
         t0 = +2.0 * (w * x + y * z)
         t1 = +1.0 - 2.0 * (x * x + ysqr)
         X = math.atan2(t0, t1)
-        
+
         t2 = +2.0 * (w * y - z * x)
         t2 = +1.0 if t2 > +1.0 else t2
         t2 = -1.0 if t2 < -1.0 else t2
         Y = math.asin(t2)
-        
+
         t3 = +2.0 * (w * z + x * y)
         t4 = +1.0 - 2.0 * (ysqr + z * z)
         Z = math.atan2(t3, t4)
-        
+
         return X, Y, Z
 
 if __name__ == '__main__':
