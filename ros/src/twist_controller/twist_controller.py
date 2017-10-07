@@ -16,7 +16,7 @@ class Controller(object):
 
     def control(self, lin_vel, ang_vel, cur_vel, is_dbw_enabled, delta_t):
     	# cur_vel is in m/s
-    	
+
     	print("cur_vel: %f", cur_vel)
 
         #cur_vel = cur_vel
@@ -25,22 +25,20 @@ class Controller(object):
         throttle = 0.0
         steer = 0.0
         brake = 0.0
- 
+
         if is_dbw_enabled != True:
             self.veloPID.reset()
             vel_error = 0
 
         else:
 	        #print("target ang_vel:", ang_vel)
-
-	        throttle = self.veloPID.step(vel_error, delta_t)
-	        throttle = self.lp_throttle.filt(throttle)
-
-	        steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
+            throttle = self.veloPID.step(vel_error, delta_t)
+            throttle = self.lp_throttle.filt(throttle)
+            steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
 
         if throttle <= 0.01:
-        	throttle = 0.0
-        	brake = abs(throttle) * 2500
+            brake = abs(throttle) * 2500
+            throttle = 0.0
 
         # Return throttle, brake, steer
         return throttle, brake, steer
