@@ -10,6 +10,8 @@ from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
+#Comment for testing git push
+import math
 
 STATE_COUNT_THRESHOLD = 3
 
@@ -21,6 +23,7 @@ class TLDetector(object):
         self.waypoints = None
         self.camera_image = None
         self.lights = []
+        self.tl2wp_idx = []
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
@@ -32,8 +35,8 @@ class TLDetector(object):
         simulator. When testing on the vehicle, the color state will not be available. You'll need to
         rely on the position of the light and the camera image to predict it.
         '''
-        sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb)
-        sub6 = rospy.Subscriber('/image_color', Image, self.image_cb)
+        sub3 = rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray, self.traffic_cb, queue_size=1)
+        sub6 = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1)
 
         config_string = rospy.get_param("/traffic_light_config")
         self.config = yaml.load(config_string)
@@ -90,6 +93,39 @@ class TLDetector(object):
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
 
+    def get_rel_dst(self, obj_a, obj_b):
+        x, y, z = obj_a.x - obj_b.x, obj_a.y - obj_b.y, obj_a.z - obj_b.z
+        return math.sqrt(x*x + y*y + z*z)
+
+    def get_rel_dst_hdg(self, obj_pos):
+        """
+        Checks if an object at a position "obj_pos" is within the vehicles field of view
+        Args:
+            obj_pos - object's pose
+        Returns:
+
+        """
+        # Get position of traffic light and ego
+        #light_pos = light.pose.pose.position
+        ego_pos = self.pose.pose.position
+
+        # Get ego heading
+        q = self.pose.pose.orientation
+        q_array = [q.x, q.y, q.z, q.w]
+        _, _, hdg_ego = tf.transformations.euler_from_quaternion(q_array)
+
+        # Calcualte the dist and angle to object
+        dst_ego2obj = [obj_pos.x - ego_pos.x, obj_pos.y - ego_pos.y]
+        hdg_ego2obj = math.atan2(dst_ego2obj[1], dst_ego2obj[0]) - hdg_ego
+        # get shortest angle (e.g. -90 deg instead of 270 deg)
+        if (hdg_ego2obj < -math.pi):
+            hdg_ego2obj += 2.0 * math.pi
+        elif (hdg_ego2obj > math.pi):
+            hdg_ego2obj -= 2.0 * math.pi
+
+        # Check if it's within FOV
+        return self.get_rel_dst(ego_pos, obj_pos), hdg_ego2obj
+
     def get_closest_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
             https://en.wikipedia.org/wiki/Closest_pair_of_points_problem
@@ -100,8 +136,18 @@ class TLDetector(object):
             int: index of the closest waypoint in self.waypoints
 
         """
-        #TODO implement
-        return 0
+        #TODO implement => done OlWi
+        close_wp_dst = 999999
+        close_wp_idx = -1
+
+        # find the clostes waypoint to the position "pose"
+        for i in range(0, len(self.waypoints.waypoints)):
+            waypoint_dst = self.get_rel_dst(self.waypoints.waypoints[i].pose.pose.position,pose.position)
+            if waypoint_dst < close_wp_dst:
+                # current waypoint is closest so far => update result candidate
+                close_wp_dst = waypoint_dst
+                close_wp_idx = i
+        return close_wp_idx
 
 
     def project_to_image_plane(self, point_in_world):
@@ -161,7 +207,10 @@ class TLDetector(object):
         #TODO use light location to zoom in on traffic light in image
 
         #Get classification
-        return self.light_classifier.get_classification(cv_image)
+        #return self.light_classifier.get_classification(cv_image)
+        return light.state
+
+
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -172,20 +221,37 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
-        light = None
-
-        # List of positions that correspond to the line to stop in front of for a given intersection
-        stop_line_positions = self.config['stop_line_positions']
-        if(self.pose):
-            car_position = self.get_closest_waypoint(self.pose.pose)
 
         #TODO find the closest visible traffic light (if one exists)
+        light_state = TrafficLight.UNKNOWN
+        stop_line_positions = self.config['stop_line_positions']
+        tl_close_dst = 200       # ignore traffic lights farer away than that (range in m)
+        tl_close_hdg_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
+        tl_close_idx = -1       # will be set to the closest traffic light in the FOV and range
+        tl_close_wp_idx = -1    # closest waypoint to the traffic light
+        max_hdg_abs_deg = 22.5
 
-        if light:
-            state = self.get_light_state(light)
-            return light_wp, state
-        self.waypoints = None
-        return -1, TrafficLight.UNKNOWN
+        tl_wp = None
+        if(self.pose and self.waypoints):
+            for idx, tl_xy in enumerate(stop_line_positions):
+                tl_pose = Pose()
+                tl_pose.position.x = tl_xy[0]
+                tl_pose.position.y = tl_xy[1]
+                tl_pose.position.z = 2          # assuming the traffic light height is at around 2m (not relevcnt)
+
+                tl_dst, tl_hdg = self.get_rel_dst_hdg(tl_pose.position)
+                if tl_hdg < math.radians(tl_close_hdg_deg):
+                    if tl_close_dst > tl_dst:
+                        tl_close_idx    = idx
+                        tl_close_dst    = tl_dst
+                        tl_close_wp_idx = self.get_closest_waypoint(tl_pose)
+            if tl_close_idx > -1:
+                light_state = self.get_light_state(self.lights[tl_close_idx])
+                # testing: set the light to red just to see weather the car is braking
+            #rospy.loginfo("curr Wp = %d / next tl_wp = %d (%d)", idx, tl_close_idx, light_state)
+        return tl_close_wp_idx, light_state
+
+
 
 if __name__ == '__main__':
     try:
