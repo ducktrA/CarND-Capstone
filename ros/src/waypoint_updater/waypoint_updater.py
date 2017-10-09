@@ -48,8 +48,8 @@ class WaypointUpdater(object):
 
         self.frequency = 10
         # TODO: Needs to be adjusted based on target speed
-        self.tl_slow_down_dst_wp = 150
-        self.tl_stopp_dst_wp = 10
+        self.tl_slow_down_dst = 40
+        self.tl_stopp_dst = 3
         self.tl_idx = -1 #nearest traffic light with red status
         self.loop()
 
@@ -62,7 +62,9 @@ class WaypointUpdater(object):
                 #(x,y,z) = self.quaternion_to_euler_angle()
 
                 closest = self.closest_wp(self.closest_before)
-
+                if self.tl_idx != -1:
+                    dst = self.distance(self.base_waypoints, self.tl_idx, closest)
+                    #rospy.loginfo("Distance=" + str(dst) + ";")
                 # TODO wrap it over when it reaches the end
                 points_ahead = min(closest + LOOKAHEAD_WPS, len(self.base_waypoints))
                 #rospy.loginfo("Closest Base WP: %d Points Ahead: %d", closest, points_ahead)
@@ -80,25 +82,22 @@ class WaypointUpdater(object):
                         idx = 0
 
                     # improve performance by considering only every x waypoints
-                    speed_reduction = 0
+                    speed_scaler = 1
                     # skip a few waypoints to improve performance but never skip traffic light waypoints (tl_idx)
                     if (i % INVERSE_WP_DENSITY) == 0 or idx == self.tl_idx:
-                        if self.tl_idx != -1:
-                            dst = self.tl_idx - idx
-                            if dst > 0:
-                                if dst < self.tl_stopp_dst_wp:
-                                    dst = 0
-                                speed_reduction = 1-min((dst*dst)/(self.tl_slow_down_dst_wp*self.tl_slow_down_dst_wp), 1) # deaccelerate in the proximity of 10 waypoints around the traffic light
-                        velocity = self.base_waypoints[idx].twist.twist.linear.x
-                        velocity *= (1- speed_reduction)
-                        self.set_waypoint_velocity(self.base_waypoints, idx, velocity)
-                        finalwps.waypoints.append(self.base_waypoints[idx])
-                        rospy.loginfo("wp: %d => v = %d", idx, velocity)
+                        if self.tl_idx >= idx:
+                            dst = self.distance(self.base_waypoints, self.tl_idx, idx)
+                            if dst < self.tl_stopp_dst:
+                                dst = 0
+                            speed_scaler = max(dst/self.tl_slow_down_dst, 0) # deaccelerate in the proximity of 10 waypoints around the traffic light
+
+                    velocity = self.base_waypoints[idx].twist.twist.linear.x
+                    velocity *= speed_scaler
+                    self.set_waypoint_velocity(self.base_waypoints, idx, velocity)
+                    finalwps.waypoints.append(self.base_waypoints[idx])
 
                     i = i + 1
                     idx = idx + 1
-
-
 
                 self.closest_before = closest
                 self.final_waypoints_pub.publish(finalwps)
