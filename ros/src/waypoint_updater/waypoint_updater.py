@@ -51,7 +51,6 @@ class WaypointUpdater(object):
         self.tl_slow_down_dst_wp = 150
         self.tl_stopp_dst_wp = 10
         self.tl_idx = -1 #nearest traffic light with red status
-        self.target_speed = (50.0*1000)/(60*60) #[m/s] = [km/h] * 60*60/1000 (e.g.40 km/h = 11.11m/s)
         self.loop()
 
     def loop(self):
@@ -90,7 +89,8 @@ class WaypointUpdater(object):
                                 if dst < self.tl_stopp_dst_wp:
                                     dst = 0
                                 speed_reduction = 1-min((dst*dst)/(self.tl_slow_down_dst_wp*self.tl_slow_down_dst_wp), 1) # deaccelerate in the proximity of 10 waypoints around the traffic light
-                        velocity = self.target_speed * (1- speed_reduction)
+                        velocity = self.base_waypoints[idx].twist.twist.linear.x
+                        velocity *= (1- speed_reduction)
                         self.set_waypoint_velocity(self.base_waypoints, idx, velocity)
                         finalwps.waypoints.append(self.base_waypoints[idx])
                         rospy.loginfo("wp: %d => v = %d", idx, velocity)
