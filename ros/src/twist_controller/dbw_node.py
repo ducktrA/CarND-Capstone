@@ -60,15 +60,15 @@ class DBWNode(object):
         rospy.Subscriber('/current_velocity', TwistStamped, self.current_velocity_cb)
         rospy.Subscriber('/vehicle/dbw_enabled', Bool, self.dbw_enabled_cb)
         rospy.Subscriber('/twist_cmd', TwistStamped, self.twist_cmd_cb)
-      
+
         # TODO maybe adjust min_speed
 
-        self.frequency = 10
+        self.frequency = 5
 
         min_speed = 0 # brake_deadband # ??
         yawCont = YawController(wheel_base, steer_ratio, min_speed, max_lat_accel, max_steer_angle)
         veloPID = PID(0.2, 0.001, 0.05, decel_limit, accel_limit)
-        
+
 
         #  TODO: Create `TwistController` object
         self.controller = Controller(veloPID, yawCont)
@@ -76,7 +76,7 @@ class DBWNode(object):
         self.cur_linvel = 0
         self.lin_vel = 0
         self.ang_vel = 0
-        
+
         self.is_dbw_enabled = False # the simulator comes all the time with the "manual" box ticked
 
         self.throttle_before = 0.0
@@ -86,7 +86,7 @@ class DBWNode(object):
         self.loop()
 
     def loop(self):
-        
+
         rate = rospy.Rate(self.frequency) # 50Hz
         while not rospy.is_shutdown():
             # TODO: Get predicted throttle, brake, and steering using `twist_controller`
@@ -96,10 +96,10 @@ class DBWNode(object):
             #                                                     <current linear velocity>,
             #                                                     <dbw status>,
             #                                                     <any other argument you need>)
-            
+
             throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled, 1./self.frequency)
-        
-             
+
+
             # steering = -0.2 --> vehicle goes to the right
             # steering = 0.2 --> vehicle goes to the left
 
@@ -142,7 +142,7 @@ class DBWNode(object):
         scmd.enable = True
         scmd.steering_wheel_angle_cmd = steer
 
-        if steer != self.steering_before:
+        if abs(steer - self.steering_before) > 0.05:
             self.steering_before = steer
             self.steer_pub.publish(scmd)
 
@@ -151,7 +151,7 @@ class DBWNode(object):
         bcmd.pedal_cmd_type = BrakeCmd.CMD_TORQUE
         bcmd.pedal_cmd = brake
 
-        if brake != self.brake_before:
+        if abs(brake - self.brake_before) > 0.05:
             self.brake_before = brake
             self.brake_pub.publish(bcmd)
 
