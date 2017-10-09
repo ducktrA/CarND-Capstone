@@ -5,11 +5,12 @@ from geometry_msgs.msg import PoseStamped, Pose
 from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+from cv_bridge import CvBridge, CvBridgeError
 from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
+import os
 #Comment for testing git push
 import math
 
@@ -52,6 +53,13 @@ class TLDetector(object):
         self.last_wp = -1
         self.state_count = 0
 
+        self.img_logging = 1
+        if self.img_logging:
+            self.img_idx = 0
+            if not (os.path.exists("./training_images")):
+                os.mkdir("./training_images")
+
+
         rospy.spin()
 
     def pose_cb(self, msg):
@@ -73,7 +81,22 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
-        light_wp, state = self.process_traffic_lights()
+        light_wp, state, hdg, dst = self.process_traffic_lights()
+
+        # Start generation of training data
+        if self.img_logging:
+            if light_wp != -1:  # only capture images if there is a traffic light light in fox and proximity
+                # convert ROS /color_image stream to an OpenCV2 imagese
+                try:
+                    cv2_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+                    img_name = "./training_images/state_" + str(state) + "-dst_" + str(dst) + "-hdg_" + str(hdg) + "-idx_" + str(self.img_idx) + ".jpg"
+                    #rospy.loginfo(img_name)
+                    cv2.imwrite(img_name, cv2_img)
+                    self.img_idx += 1
+                except CvBridgeError as e:
+                    rospy.logerror(e)
+
+        # End generatin tinof trainianianing data
 
         '''
         Publish upcoming red lights at camera frequency.
@@ -225,10 +248,12 @@ class TLDetector(object):
         #TODO find the closest visible traffic light (if one exists)
         light_state = TrafficLight.UNKNOWN
         stop_line_positions = self.config['stop_line_positions']
-        tl_close_dst = 200       # ignore traffic lights farer away than that (range in m)
-        tl_close_hdg_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
+        tl_close_min_dst = 200       # ignore traffic lights farer away than that (range in m)
+        tl_close_fov_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
         tl_close_idx = -1       # will be set to the closest traffic light in the FOV and range
         tl_close_wp_idx = -1    # closest waypoint to the traffic light
+        tl_close_hdg_deg = -1
+        tl_close_dst = -1
         max_hdg_abs_deg = 22.5
 
         tl_wp = None
@@ -240,16 +265,17 @@ class TLDetector(object):
                 tl_pose.position.z = 2          # assuming the traffic light height is at around 2m (not relevcnt)
 
                 tl_dst, tl_hdg = self.get_rel_dst_hdg(tl_pose.position)
-                if tl_hdg < math.radians(tl_close_hdg_deg):
-                    if tl_close_dst > tl_dst:
-                        tl_close_idx    = idx
-                        tl_close_dst    = tl_dst
-                        tl_close_wp_idx = self.get_closest_waypoint(tl_pose)
+                if tl_hdg < math.radians(tl_close_fov_deg):
+                    if tl_close_min_dst > tl_dst:
+                        tl_close_idx        = idx
+                        tl_close_min_dst    = tl_dst
+                        tl_close_hdg_deg    = tl_hdg
+                        tl_close_wp_idx     = self.get_closest_waypoint(tl_pose)
             if tl_close_idx > -1:
                 light_state = self.get_light_state(self.lights[tl_close_idx])
                 # testing: set the light to red just to see weather the car is braking
             #rospy.loginfo("curr Wp = %d / next tl_wp = %d (%d)", idx, tl_close_idx, light_state)
-        return tl_close_wp_idx, light_state
+        return tl_close_wp_idx, light_state, tl_close_hdg_deg, tl_close_min_dst
 
 
 
