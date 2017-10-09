@@ -53,7 +53,7 @@ class TLDetector(object):
         self.last_wp = -1
         self.state_count = 0
 
-        self.img_logging = 1
+        self.img_logging = 0        #0: off / 1: on
         if self.img_logging:
             self.img_idx = 0
             if not (os.path.exists("./training_images")):
