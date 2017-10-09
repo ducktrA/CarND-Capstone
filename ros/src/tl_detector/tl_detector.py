@@ -26,6 +26,7 @@ class TLDetector(object):
         self.lights = []
         self.tl2wp_idx = []
 
+
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
 
@@ -54,10 +55,13 @@ class TLDetector(object):
         self.state_count = 0
 
         self.img_logging = 0        #0: off / 1: on
+
         if self.img_logging:
+            self.last_img_dst = 0
             self.img_idx = 0
-            if not (os.path.exists("./training_images")):
-                os.mkdir("./training_images")
+            self.training_img_path = "./training_images"
+            if not (os.path.exists(self.training_img_path)):
+                os.mkdir(self.training_img_path)
 
 
         rospy.spin()
@@ -81,22 +85,9 @@ class TLDetector(object):
         """
         self.has_image = True
         self.camera_image = msg
-        light_wp, state, hdg, dst = self.process_traffic_lights()
+        light_wp, state, hdg, dst, tl_close_idx = self.process_traffic_lights()
+        #rospy.loginfo("Distance=" + str(dst) + "; Hdg=" + str(hdg) + ";")
 
-        # Start generation of training data
-        if self.img_logging:
-            if light_wp != -1:  # only capture images if there is a traffic light light in fox and proximity
-                # convert ROS /color_image stream to an OpenCV2 imagese
-                try:
-                    cv2_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-                    img_name = "./training_images/state_" + str(state) + "-dst_" + str(dst) + "-hdg_" + str(hdg) + "-idx_" + str(self.img_idx) + ".jpg"
-                    #rospy.loginfo(img_name)
-                    cv2.imwrite(img_name, cv2_img)
-                    self.img_idx += 1
-                except CvBridgeError as e:
-                    rospy.logerror(e)
-
-        # End generatin tinof trainianianing data
 
         '''
         Publish upcoming red lights at camera frequency.
@@ -175,41 +166,58 @@ class TLDetector(object):
 
     def project_to_image_plane(self, point_in_world):
         """Project point from 3D world coordinates to 2D camera image location
-
         Args:
             point_in_world (Point): 3D location of a point in the world
-
         Returns:
             x (int): x coordinate of target point in image
             y (int): y coordinate of target point in image
-
         """
 
         fx = self.config['camera_info']['focal_length_x']
         fy = self.config['camera_info']['focal_length_y']
         image_width = self.config['camera_info']['image_width']
         image_height = self.config['camera_info']['image_height']
-
         # get transform between pose of camera and world frame
         trans = None
         try:
             now = rospy.Time.now()
-            self.listener.waitForTransform("/base_link",
-                  "/world", now, rospy.Duration(1.0))
-            (trans, rot) = self.listener.lookupTransform("/base_link",
-                  "/world", now)
-
+            self.listener.waitForTransform("/base_link","/world", now, rospy.Duration(1.0))
+            (trans, rot) = self.listener.lookupTransform("/base_link","/world", now)
         except (tf.Exception, tf.LookupException, tf.ConnectivityException):
             rospy.logerr("Failed to find camera to map transform")
 
-        #TODO Use tranform and rotation to calculate 2D position of light in image
+        #Use tranform and rotation to calculate 2D position of light in image
+        if (trans != None):
+               #print("rot: ", rot)
+               #print("trans: ", trans)
+               px = point_in_world.x
+               py = point_in_world.y
+               pz = point_in_world.z
+               xt = trans[0]
+               yt = trans[1]
+               zt = trans[2]
 
-        x = 0
-        y = 0
+               #Convert rotation vector from quaternion to euler:
+               euler = tf.transformations.euler_from_quaternion(rot)
+               sinyaw = math.sin(euler[2])
+               cosyaw = math.cos(euler[2])
 
-        return (x, y)
+               #Rotation followed by translation
+               Rnt = (
+                       px*cosyaw - py*sinyaw + xt,
+                       px*sinyaw + py*cosyaw + yt,
+                       pz + zt)
 
-    def get_light_state(self, light):
+               #Pinhole camera model w/o distorion
+               u = int(fx * -Rnt[1]/Rnt[0] + image_width/2)
+               v = int(fy * -Rnt[2]/Rnt[0] + image_height/2)
+
+        else:
+               u = 0
+               v = 0
+        return (u, v)
+
+    def get_light_state(self, light, dst):
         """Determines the current color of the traffic light
 
         Args:
@@ -229,6 +237,27 @@ class TLDetector(object):
 
         #TODO use light location to zoom in on traffic light in image
 
+
+        tl_pose = light.pose.pose
+        tl_img_x, tl_img_y = self.project_to_image_plane(tl_pose.position)
+
+        crop_width = int(7000 / dst)
+        crop_height = int(7000 / dst)
+        crop_x1 = int(tl_img_x - crop_width *0.5)
+        crop_y1 = int(tl_img_y - crop_height *0.5)
+        crop_x2 = int(tl_img_x + crop_width)
+        crop_y2 = int(tl_img_y + crop_height)
+
+        #cv2.rectangle(cv_image, (crop_x1, crop_y1), (crop_x2, crop_y2), (0,0,255), 5)
+        cv_image = cv_image[crop_y1:crop_y2, crop_x1:crop_x2]
+
+        if self.img_logging:
+            self.img_idx += 1
+            if self.img_idx % 5 == 0 and dst > 5 and self.last_img_dst != dst:
+                self.last_img_dst = dst
+                rospy.loginfo("x = " + str(crop_x1) + "y=" + str(crop_y1) + "width=" + str(crop_width) + "height=" + str(crop_height))
+                crop_img_name = self.training_img_path + "/idx" + str(self.img_idx)+ "-state_" + str(light.state) + "-dst_" + str(dst) + ".jpg"
+                cv2.imwrite(crop_img_name, cv_image)
         #Get classification
         #return self.light_classifier.get_classification(cv_image)
         return light.state
@@ -248,7 +277,7 @@ class TLDetector(object):
         #TODO find the closest visible traffic light (if one exists)
         light_state = TrafficLight.UNKNOWN
         stop_line_positions = self.config['stop_line_positions']
-        tl_close_min_dst = 200       # ignore traffic lights farer away than that (range in m)
+        tl_close_min_dst = 60   # ignore traffic lights farer away than that (range in m)
         tl_close_fov_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
         tl_close_idx = -1       # will be set to the closest traffic light in the FOV and range
         tl_close_wp_idx = -1    # closest waypoint to the traffic light
@@ -258,13 +287,15 @@ class TLDetector(object):
 
         tl_wp = None
         if(self.pose and self.waypoints):
-            for idx, tl_xy in enumerate(stop_line_positions):
+            for idx in range(0, len(self.lights)):
                 tl_pose = Pose()
-                tl_pose.position.x = tl_xy[0]
-                tl_pose.position.y = tl_xy[1]
-                tl_pose.position.z = 2          # assuming the traffic light height is at around 2m (not relevcnt)
+                tl_pose.position.x = self.lights[idx].pose.pose.position.x
+                tl_pose.position.y = self.lights[idx].pose.pose.position.y
+                tl_pose.position.z = self.lights[idx].pose.pose.position.z          # assuming the traffic light height is at around 2m (not relevcnt)
 
                 tl_dst, tl_hdg = self.get_rel_dst_hdg(tl_pose.position)
+                #rospy.loginfo("i = " + str(idx) + "; hdg = " + str(tl_hdg) + "; dst = " + str(tl_dst) + "; x/y/z" + str(tl_pose.position.x) + "; " + str(tl_pose.position.y) + "; " + str(tl_pose.position.z))
+
                 if tl_hdg < math.radians(tl_close_fov_deg):
                     if tl_close_min_dst > tl_dst:
                         tl_close_idx        = idx
@@ -272,10 +303,10 @@ class TLDetector(object):
                         tl_close_hdg_deg    = tl_hdg
                         tl_close_wp_idx     = self.get_closest_waypoint(tl_pose)
             if tl_close_idx > -1:
-                light_state = self.get_light_state(self.lights[tl_close_idx])
+                light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
                 # testing: set the light to red just to see weather the car is braking
             #rospy.loginfo("curr Wp = %d / next tl_wp = %d (%d)", idx, tl_close_idx, light_state)
-        return tl_close_wp_idx, light_state, tl_close_hdg_deg, tl_close_min_dst
+        return tl_close_wp_idx, light_state, tl_close_hdg_deg, tl_close_min_dst, tl_close_idx
 
 
 
