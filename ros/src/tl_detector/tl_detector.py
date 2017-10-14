@@ -81,21 +81,19 @@ class TLDetector(object):
         rospy.spin()
 
     def pose_cb(self, msg):
-        if self.sync_active:
-            self.pose_temp = msg
-        else:
+        self.pose_temp = msg
+        if not self.sync_active:
             self.pose = msg
 
     def waypoints_cb(self, waypoints):
+        self.waypoints_temp = waypoints
         if self.sync_active:
-            self.waypoints_temp = waypoints
-        else:
             self.waypoints = waypoints
 
+
     def traffic_cb(self, msg):
-        if self.sync_active:
-            self.lights_temp = msg.lights
-        else:
+        self.lights_temp = msg.lights
+        if not self.sync_active:
             self.lights = msg.lights
 
 
@@ -284,7 +282,6 @@ class TLDetector(object):
         if(not self.has_image):
             self.prev_light_loc = None
             return False
-
         state = TrafficLight.UNKNOWN
 
         # Get the bounding box of the traffic light in opencv coordinates :
@@ -305,20 +302,20 @@ class TLDetector(object):
 
             # Detect traffic light based on pixel color
 
-            color = tl_image[box_height*5/6, box_width/2]
+
             if tl_image[box_height*1/6, box_width/2,2] > 200:       # 2 = Red
-                rospy.loginfo("Pixel Detection Light State = Red")
+                #rospy.loginfo("Pixel Detection Light State = Red")
                 state = TrafficLight.RED
             elif tl_image[box_height*3/6, box_width/2,1] > 200 and tl_image[box_height*3/6, box_width/2,2] > 200:     # Red + Green = Yellow
-                rospy.loginfo("Pixel Detection Light State = Yellow")
+                #rospy.loginfo("Pixel Detection Light State = Yellow")
                 state = TrafficLight.YELLOW
             elif tl_image[box_height*5/6, box_width/2,1] > 200:     # 1 = Green
-                rospy.loginfo("Pixel Detection Light State = Green")
+                #rospy.loginfo("Pixel Detection Light State = Green")
                 state = TrafficLight.GREEN
             else:
-                rospy.loginfo("Pixel Detection Light State = Unknown")
-                #state = TrafficLight.UNKNOWN
-                state = light.state
+                #rospy.loginfo("Pixel Detection Light State = Unknown")
+                state = TrafficLight.UNKNOWN
+                #state = light.state
 
             if self.img_logging:
                 self.img_idx += 1
@@ -336,9 +333,9 @@ class TLDetector(object):
                     cv2.imwrite(rect_img_name, full_image)
                     cv2.imwrite(crop_img_name, tl_image)
         else:
-            rospy.loginfo("Traffic light out of image or cutoff => State = Unknown")
-            #state = TrafficLight.UNKNOWN
-            state = light.state
+            #rospy.loginfo("Traffic light out of image or cutoff => State = Unknown")
+            state = TrafficLight.UNKNOWN
+            #state = light.state
         return state
 
 
@@ -356,8 +353,8 @@ class TLDetector(object):
         #TODO find the closest visible traffic light (if one exists)
         light_state = TrafficLight.UNKNOWN
         stop_line_positions = self.config['stop_line_positions']
-        tl_close_min_dst = 50   # ignore traffic lights closer than that (range in m)
-        tl_min_dst = 10   # ignore traffic lights farer away than that (range in m)
+        tl_close_min_dst = 50   # ignore traffic lights farer than that (range in m)
+        tl_min_dst = 10   # ignore traffic lights closer than that (range in m)
         tl_close_fov_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
         tl_close_idx = -1       # will be set to the closest traffic light in the FOV and range
         tl_close_wp_idx = -1    # closest waypoint to the traffic light
@@ -373,19 +370,20 @@ class TLDetector(object):
                 tl_pose.position.y = self.lights[idx].pose.pose.position.y
                 tl_pose.position.z = self.lights[idx].pose.pose.position.z          # assuming the traffic light height is at around 2m (not relevcnt)
 
-                tl_dst, box_heightdg = self.get_rel_dst_hdg(tl_pose.position)
-                #rospy.loginfo("i = " + str(idx) + "; hdg = " + str(box_heightdg) + "; dst = " + str(tl_dst) + "; x/y/z" + str(tl_pose.position.x) + "; " + str(tl_pose.position.y) + "; " + str(tl_pose.position.z))
+                tl_dst, tl_bearing = self.get_rel_dst_hdg(tl_pose.position)
+                #rospy.loginfo("i = " + str(idx) + "; hdg = " + str(tl_bearing) + "; dst = " + str(tl_dst) + "; x/y/z" + str(tl_pose.position.x) + "; " + str(tl_pose.position.y) + "; " + str(tl_pose.position.z))
 
-                if abs(box_heightdg) < math.radians(tl_close_fov_deg):
+                if abs(tl_bearing) < math.radians(tl_close_fov_deg):
                     if tl_close_min_dst > tl_dst and tl_min_dst < tl_dst:
                         tl_close_idx        = idx
                         tl_close_min_dst    = tl_dst
-                        tl_close_hdg_deg    = box_heightdg
+                        tl_close_hdg_deg    = tl_bearing
                         tl_close_wp_idx     = self.get_closest_waypoint(tl_pose)
             if tl_close_idx > -1:
+                #light_state = self.lights[tl_close_idx].state 
                 light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
                 # testing: set the light to red just to see weather the car is braking
-        #rospy.loginfo("next box_widthp = %d (%d)", tl_close_idx, light_state)
+        #rospy.loginfo("next tl = %d (%d)", tl_close_wp_idx, light_state)
         return tl_close_wp_idx, light_state
 
 
