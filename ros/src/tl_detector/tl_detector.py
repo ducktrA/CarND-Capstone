@@ -6,13 +6,11 @@ from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
-from light_classification.tl_classifier import TLClassifier
 import tf
 import cv2
 import yaml
 import numpy as np
 import os
-#Comment for testing git push
 import math
 
 STATE_COUNT_THRESHOLD = 3
@@ -47,7 +45,6 @@ class TLDetector(object):
         self.upcoming_red_light_pub = rospy.Publisher('/traffic_waypoint', Int32, queue_size=1)
 
         self.bridge = CvBridge()
-        self.light_classifier = TLClassifier()
         self.listener = tf.TransformListener()
 
         self.state = TrafficLight.UNKNOWN
@@ -312,7 +309,7 @@ class TLDetector(object):
             if tl_image[box_height*1/6, box_width/2,2] > 200:       # 2 = Red
                 rospy.loginfo("Pixel Detection Light State = Red")
                 state = TrafficLight.RED
-            elif tl_image[box_height*3/6, box_width/2,0] > 80:     # 0 = Blue
+            elif tl_image[box_height*3/6, box_width/2,1] > 200 and tl_image[box_height*3/6, box_width/2,2] > 200:     # Red + Green = Yellow
                 rospy.loginfo("Pixel Detection Light State = Yellow")
                 state = TrafficLight.YELLOW
             elif tl_image[box_height*5/6, box_width/2,1] > 200:     # 1 = Green
