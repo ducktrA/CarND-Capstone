@@ -159,7 +159,9 @@ class TLDetector(object):
             Absolute distance between first and second object in meters.
         """
         x, y, z = obj_a.x - obj_b.x, obj_a.y - obj_b.y, obj_a.z - obj_b.z
+	
         return math.sqrt(x*x + y*y + z*z)
+
 
     def get_rel_dst_hdg(self, obj_pos):
         """
@@ -202,7 +204,7 @@ class TLDetector(object):
         #TODO implement => done OlWi
         close_wp_dst = 999999
         close_wp_idx = -1
-
+	
         # find the clostes waypoint to the position "pose"
         for i in range(0, len(self.waypoints.waypoints)):
             waypoint_dst = self.get_rel_dst(self.waypoints.waypoints[i].pose.pose.position,pose.position)
@@ -445,7 +447,13 @@ class TLDetector(object):
                         tl_close_idx        = idx
                         tl_close_min_dst    = tl_dst
                         tl_close_hdg_deg    = tl_bearing
-                        tl_close_wp_idx     = self.get_closest_waypoint(tl_pose)
+			#print(len(self.config['stop_line_positions']))
+			tls_pose = Pose()
+			tls_pose.position.x = self.config['stop_line_positions'][idx][0]
+			tls_pose.position.y = self.config['stop_line_positions'][idx][1]
+			tls_pose.position.z = 0
+
+                        tl_close_wp_idx     = self.get_closest_waypoint(tls_pose)
             if tl_close_idx > -1:
                 #light_state = self.lights[tl_close_idx].state 
                 light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
