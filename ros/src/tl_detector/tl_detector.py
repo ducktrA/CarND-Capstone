@@ -6,6 +6,7 @@ from styx_msgs.msg import TrafficLightArray, TrafficLight
 from styx_msgs.msg import Lane
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
+import tensorflow as tf2
 import tf
 import cv2
 import yaml
@@ -20,7 +21,11 @@ STATE_COUNT_THRESHOLD = 3
 class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
-
+        self.detection_graph = None
+        self.image_tensor = None
+        self.detection_boxes = None
+        self.detection_scores = None
+        self.detection_classes = None
         self.pose = None
         self.waypoints = None
         self.camera_image = None
@@ -42,7 +47,7 @@ class TLDetector(object):
 
         sub6 = rospy.Subscriber('/image_color', Image, self.image_cb, queue_size=1)
         # added this line to save the images from the rosbag file from the site. Not used for actual runtime
-        #sub4 = rospy.Subscriber('/image_raw', Image, self.image_sitebag_raw_cb, queue_size=1)
+        sub4 = rospy.Subscriber('/image_raw', Image, self.image_sitebag_raw_cb, queue_size=1)
         config_string = rospy.get_param("/traffic_light_config")
         self.config = yaml.load(config_string)
 
@@ -71,7 +76,7 @@ class TLDetector(object):
 
         # Use this to turn on the image logging. Images will be saved in
         # the path training_img_path
-        self.img_logging = 0        #0: off / 1: on
+        self.img_logging = 1        #0: off / 1: on
         self.training_img_path = "./training_images"
 
         # Will create a path to store the images
@@ -100,6 +105,37 @@ class TLDetector(object):
         if not self.sync_active:
             self.lights = msg.lights
 
+    def load_graph(self, graph_file):
+        """Loads a frozen inference graph"""
+        graph = tf2.Graph()
+        with graph.as_default():
+            od_graph_def = tf2.GraphDef()
+            with tf2.gfile.GFile(graph_file, 'rb') as fid:
+                serialized_graph = fid.read()
+                od_graph_def.ParseFromString(serialized_graph)
+                tf2.import_graph_def(od_graph_def, name='')
+        return graph
+    def init_graph(self):
+        FASTER_RCNN_GRAPH_FILE = "./frozen_inference_graph.pb"
+
+        self.detection_graph = self.load_graph(FASTER_RCNN_GRAPH_FILE)
+
+        # The input placeholder for the image.
+        # `get_tensor_by_name` returns the Tensor with the associated name in the Graph.
+        self.image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
+
+        # Each box represents a part of the image where a particular object was detected.
+        self.detection_boxes = self.detection_graph.get_tensor_by_name('detection_boxes:0')
+
+        # Each score represent how level of confidence for each of the objects.
+        # Score is shown on the result image, together with the class label.
+        self.detection_scores = self.detection_graph.get_tensor_by_name('detection_scores:0')
+
+        # The classification of the object (integer id).
+        self.detection_classes = self.detection_graph.get_tensor_by_name('detection_classes:0')
+
+
+
 
     def image_sitebag_raw_cb(self, msg):
         """Stores the rosbag images to save them for classifier training / testing
@@ -108,12 +144,46 @@ class TLDetector(object):
             msg (Image): image from car-mounted camera
 
         """
+
         rosbag_img = msg
 
         full_image = self.bridge.imgmsg_to_cv2(rosbag_img, "bgr8")
-        rect_img_name = self.training_img_path + "/rosbag_img_" + str(self.img_idx)+".jpg"
+        #rect_img_name = self.training_img_path + "/rosbag_img_" + str(self.img_idx)+".jpg"
+        #self.img_idx += 1
+        #cv2.imwrite(rect_img_name, full_image)
         self.img_idx += 1
-        cv2.imwrite(rect_img_name, full_image)
+
+        image = full_image
+        image_np = np.expand_dims(np.asarray(image, dtype=np.uint8), 0)
+        if self.detection_graph == None:
+            self.init_graph()
+
+        with tf2.Session(graph=self.detection_graph) as sess:
+            # Actual detection.
+            (boxes, scores, classes) = sess.run([self.detection_boxes, self.detection_scores, self.detection_classes],
+                                                feed_dict={self.image_tensor: image_np})
+
+            # Remove unnecessary dimensions
+            boxes = np.squeeze(boxes)
+            scores = np.squeeze(scores)
+            classes = np.squeeze(classes)
+            for i in range(len(boxes)):
+                if 10 == int(classes[i]):
+                    # Its a traffic light!
+                    bot, left, top, right = boxes[i, ...]
+                    height, width, channels = full_image.shape
+
+                    bot   = int(bot*height)
+                    left  = int(left*width)
+                    top   = int(top*height)
+                    right = int(width*right)
+
+                    rect_img_name = self.training_img_path + "/rosbag_crop_img_" + str(self.img_idx)+"_box_" + str(i) + "_class_" + str(classes[i]) + ".jpg"
+                    box_img = full_image
+                    cv2.rectangle(box_img, (right, top), (left, bot), (0,0,255), 2)
+
+                    cv2.imwrite(rect_img_name, box_img)
+
 
     def image_cb(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
@@ -444,37 +514,32 @@ class TLDetector(object):
         box_widthp = None
         if(self.pose and self.waypoints) and len(self.lights) > 0 :
 
-	    for idx in range(0, len(self.lights)):
+    	    for idx in range(0, len(self.lights)):
                 tl_pose = Pose()
                 tl_pose.position.x = self.lights[idx].pose.pose.position.x
                 tl_pose.position.y = self.lights[idx].pose.pose.position.y
                 tl_pose.position.z = self.lights[idx].pose.pose.position.z          # assuming the traffic light height is at around 2m (not relevcnt)
-
                 tl_dst, tl_bearing = self.get_rel_dst_hdg(tl_pose.position)
-
                 #rospy.loginfo("i = " + str(idx) + "; hdg = " + str(tl_bearing) + "; dst = " + str(tl_dst) + "; x/y/z" + str(tl_pose.position.x) + "; " + str(tl_pose.position.y) + "; " + str(tl_pose.position.z))
-
                 if abs(tl_bearing) < math.radians(tl_close_fov_deg):
                     if tl_close_min_dst > tl_dst and tl_min_dst < tl_dst:
-			#ts = time.time()
-			#st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-			#print(st+', distance, bearing: '+str(tl_dst)+', '+str(tl_bearing))
-			#print('distance: '+str(tl_dst))
+    		            #ts = time.time()
+    		            #st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    		            #print(st+', distance, bearing: '+str(tl_dst)+', '+str(tl_bearing))
+    		            #print('distance: '+str(tl_dst))
                         tl_close_idx        = idx
                         tl_close_min_dst    = tl_dst
                         tl_close_hdg_deg    = tl_bearing
-			#print(len(self.config['stop_line_positions']))
-			            tls_pose = Pose()
-			            tls_pose.position.x = self.config['stop_line_positions'][idx][0]
-			            tls_pose.position.y = self.config['stop_line_positions'][idx][1]
-			            tls_pose.position.z = 0
-
+                        tls_pose = Pose()
+                        tls_pose.position.x = self.config['stop_line_positions'][idx][0]
+                        tls_pose.position.y = self.config['stop_line_positions'][idx][1]
+                        tls_pose.position.z = 0
                         tl_close_wp_idx     = self.get_closest_waypoint(tls_pose)
-            if tl_close_idx > -1:
-                #light_state = self.lights[tl_close_idx].state
-                light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
-		#print(light_state)
-                # testing: set the light to red just to see whether the car is braking
+        if tl_close_idx > -1:
+            #light_state = self.lights[tl_close_idx].state
+            light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
+		    #print(light_state)
+            # testing: set the light to red just to see whether the car is braking
         #rospy.loginfo("next tl = %d (%d)", tl_close_wp_idx, light_state)
         return tl_close_wp_idx, light_state
 
