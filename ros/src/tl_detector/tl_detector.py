@@ -12,6 +12,8 @@ import yaml
 import numpy as np
 import os
 import math
+import datetime
+import time
 
 STATE_COUNT_THRESHOLD = 3
 
@@ -269,6 +271,45 @@ class TLDetector(object):
             return -1, -1, -1, -1
 
 
+    def get_dom_color(self, box_img, color):
+	
+	img_shape = box_img.shape
+
+	if color == TrafficLight.RED:
+		#cut edge of the boxes to focus on the light
+		cut_img = box_img[int(img_shape[0]*0.2):int(img_shape[0]*0.9), int(img_shape[1]*0.1):int(img_shape[1]*0.9)]
+		#c_min = np.array([200,0,0], np.uint8)
+		#c_max = np.array([255,50,50], np.uint8) 
+		#HSV red treshold
+		c_min = np.array([30,150,50], np.uint8)
+		c_max = np.array([255,255,180], np.uint8)
+		
+	elif color == TrafficLight.YELLOW:
+		#cut edge of the boxes to focus on the light
+		cut_img = box_img[int(img_shape[0]*0.2):int(img_shape[0]*0.8), int(img_shape[1]*0.1):int(img_shape[1]*0.9)]
+		#c_min = np.array([200,150,0], np.uint8)
+		#c_max = np.array([255,255,50], np.uint8) 
+		#HSV yellow treshold
+		c_min = np.array([20,100,100], np.uint8)
+		c_max = np.array([30,255,255], np.uint8) 
+		
+	elif color == TrafficLight.GREEN:
+		#cut edge of the boxes to focus on the light
+		cut_img = box_img[int(img_shape[0]*0.1):int(img_shape[0]*0.8), int(img_shape[1]*0.1):int(img_shape[1]*0.9)]
+		#c_min = np.array([50,200,0], np.uint8)
+		#c_max = np.array([120,255,50], np.uint8) 
+		#HSV green treshold
+		c_min = np.array([57,88,90], np.uint8)
+		c_max = np.array([68,242,231], np.uint8)
+		
+	#get number of pixels with corresponnnnding color
+	dst = cv2.inRange(cv2.cvtColor(cut_img, cv2.COLOR_BGR2HSV), c_min, c_max)
+	c_cnt = cv2.countNonZero(dst)
+
+	return c_cnt
+
+	
+	
     def get_light_state(self, light, dst):
         """Determines the current color of the traffic light
 
@@ -302,14 +343,33 @@ class TLDetector(object):
 
             # Detect traffic light based on pixel color
 
-
-            if tl_image[box_height*1/6, box_width/2,2] > 200:       # 2 = Red
+	    #get area of red emitter
+	    box = tl_image[:box_height/3, :box_width]
+	    red_pct = self.get_dom_color(box, TrafficLight.RED)
+	    #get area of yellow emitter
+	    box = tl_image[box_height/3:2*box_height/3, :box_width]
+	    yellow_pct = self.get_dom_color(box, TrafficLight.YELLOW)
+	    #get area of green emitter
+	    box = tl_image[2*box_height/3:, :box_width]
+	    green_pct = self.get_dom_color(box, TrafficLight.GREEN)
+	    #determine box with the highest pixel numbers with corresponding color
+	    state_pcts = np.array([red_pct, yellow_pct, green_pct])
+	    state_idx = np.argmax(state_pcts)
+	    #print(state_idx, np.array([red_pct, yellow_pct, green_pct]))
+	
+            if state_idx == 0:       # 0 = Red
                 #rospy.loginfo("Pixel Detection Light State = Red")
                 state = TrafficLight.RED
-            elif tl_image[box_height*3/6, box_width/2,1] > 200 and tl_image[box_height*3/6, box_width/2,2] > 200:     # Red + Green = Yellow
+		if state_pcts[1] > 0: #red+yellow -> yellow
+			if state_pcts[0]/state_pcts[1] < 0.5:
+				state = TrafficLight.YELLOW
+		if state_pcts[2] > 0: #red+green -> green
+			if state_pcts[0]/state_pcts[2] < 0.5:
+				state = TrafficLight.GREEN
+            elif state_idx == 1:     # 1 = Yellow
                 #rospy.loginfo("Pixel Detection Light State = Yellow")
                 state = TrafficLight.YELLOW
-            elif tl_image[box_height*5/6, box_width/2,1] > 200:     # 1 = Green
+            elif state_idx == 2:     # 2 = Green
                 #rospy.loginfo("Pixel Detection Light State = Green")
                 state = TrafficLight.GREEN
             else:
@@ -317,6 +377,7 @@ class TLDetector(object):
                 state = TrafficLight.UNKNOWN
                 #state = light.state
 
+	    
             if self.img_logging:
                 self.img_idx += 1
                 if self.last_img_dst != dst:                        # Only store the the image if the distance changed
@@ -327,15 +388,15 @@ class TLDetector(object):
                     cv2.rectangle(full_image, (xr, yt + box_height/3), (xl, yt + 2*box_height/3), (0,0,255), 2)
                     cv2.rectangle(full_image, (xr, yt + 2*box_height/3), (xl, yd), (0,0,255), 2)
                     cv2.rectangle(full_image, (xl + box_width/2-5, yt + box_height*5/6-5), (xl + box_width/2+5, yt + box_height*5/6+5), (0,255,0), 5)
-
-                    crop_img_name = self.training_img_path + "/crop_state_" + str(state) + "-dst_" + str(dst) + "-idx" + str(self.img_idx)+ ".jpg"
-                    rect_img_name = self.training_img_path + "/state_" + str(state) + "-dst_" + str(dst) + "-idx" + str(self.img_idx)+ ".jpg"
+		    
+                    crop_img_name = self.training_img_path + "/crop_state_" + str(state) + "-dst_" + str(dst) + "-idx" + str(self.img_idx)+".jpg"
+                    rect_img_name = self.training_img_path + "/state_" + str(state) + "-dst_" + str(dst) + "-idx" + str(self.img_idx)+".jpg"
                     cv2.imwrite(rect_img_name, full_image)
                     cv2.imwrite(crop_img_name, tl_image)
         else:
             #rospy.loginfo("Traffic light out of image or cutoff => State = Unknown")
-            state = TrafficLight.UNKNOWN
-            #state = light.state
+            #state = TrafficLight.UNKNOWN
+            state = light.state
         return state
 
 
@@ -364,17 +425,23 @@ class TLDetector(object):
 
         box_widthp = None
         if(self.pose and self.waypoints) and len(self.lights) > 0 :
-            for idx in range(0, len(self.lights)):
+	    
+	    for idx in range(0, len(self.lights)):
                 tl_pose = Pose()
                 tl_pose.position.x = self.lights[idx].pose.pose.position.x
                 tl_pose.position.y = self.lights[idx].pose.pose.position.y
                 tl_pose.position.z = self.lights[idx].pose.pose.position.z          # assuming the traffic light height is at around 2m (not relevcnt)
 
                 tl_dst, tl_bearing = self.get_rel_dst_hdg(tl_pose.position)
+		
                 #rospy.loginfo("i = " + str(idx) + "; hdg = " + str(tl_bearing) + "; dst = " + str(tl_dst) + "; x/y/z" + str(tl_pose.position.x) + "; " + str(tl_pose.position.y) + "; " + str(tl_pose.position.z))
 
                 if abs(tl_bearing) < math.radians(tl_close_fov_deg):
                     if tl_close_min_dst > tl_dst and tl_min_dst < tl_dst:
+			#ts = time.time()
+			#st = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+			#print(st+', distance, bearing: '+str(tl_dst)+', '+str(tl_bearing))
+			#print('distance: '+str(tl_dst))
                         tl_close_idx        = idx
                         tl_close_min_dst    = tl_dst
                         tl_close_hdg_deg    = tl_bearing
@@ -382,6 +449,7 @@ class TLDetector(object):
             if tl_close_idx > -1:
                 #light_state = self.lights[tl_close_idx].state 
                 light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
+		#print(light_state)
                 # testing: set the light to red just to see weather the car is braking
         #rospy.loginfo("next tl = %d (%d)", tl_close_wp_idx, light_state)
         return tl_close_wp_idx, light_state
