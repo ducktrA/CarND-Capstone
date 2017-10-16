@@ -42,6 +42,17 @@ def create_label_map(labelmap):
 
             lmpbtxt.write(t)
 
+
+def adjust_gamma(image, gamma=1.0):
+    # build a lookup table mapping the pixel values [0, 255] to
+    # their adjusted gamma values
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255
+        for i in np.arange(0, 256)]).astype("uint8")
+ 
+    # apply gamma correction using the lookup table
+    return cv2.LUT(image, table)
+
 def create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, fname):
     global annotated_images
     path = annotated_images
@@ -85,7 +96,10 @@ def create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, fname):
     return tf_example
 
 def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
-    directory = "./positives/*/{}/*".format("red")
+    
+    print("building {0} dataset with {1} samples per traffic sign.".format(train_or_test, amount))
+
+    #directory = "./positives/*/{}/*".format("red")
 
     writer = tf.python_io.TFRecordWriter("{}.record".format(train_or_test))
 
@@ -98,32 +112,37 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (800,600), interpolation=cv2.INTER_CUBIC)
         S.append(img)
+        S.append(cv2.flip(img, 1))
         
     S = np.array(S)
 
     # Read X Vector
+    rois_d = {}
 
     for tag in tags:
-        directory = "./positives/*/{}/*".format(tag)
-
+        directory = "./positives/*/*/*".format(tag)
         rois_images = glob.glob(directory)
-        
+
         R = []
-        
+
         for r in rois_images:
             img = cv2.imread(r)
             R.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        
-        R = np.array(R)
-        
-        for i in range(SAMPLES_PER_TAG):
-            r_rand = np.random.randint(0, len(R))
+
+        rois_d[tag] = np.array(R)
+
+    for i in range(amount):      
+
+        for tag in tags:            
+
+            r_rand = np.random.randint(0, len(rois_d[tag]))
             s_rand = np.random.randint(0, len(S))
+            gamma = float(np.random.randint(50, 300)) / 100.
 
             roi = R[r_rand]
-            scenery = S[s_rand]
+            scenery = adjust_gamma(S[s_rand], gamma)
         
-            scale_down = np.random.randint(10, 100) / 100.
+            scale_down = np.random.randint(10, 70) / 100.
             roi = cv2.resize(roi, (0,0), fx=scale_down, fy=scale_down)
         
             annotated_image = np.copy(scenery)
@@ -150,9 +169,12 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
 
     writer.close()
 
-simple_augment(tags, labelmap, scenery, metadata, "train", 200)
+
 
 create_label_map(labelmap)
+
+simple_augment(tags, labelmap, scenery, metadata, "train", 800)
+simple_augment(tags, labelmap, scenery, metadata, "test", 100)
 
 with open("./annotation.csv", "w") as metadata_file:
     for line in metadata:
