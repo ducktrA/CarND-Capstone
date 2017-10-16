@@ -38,7 +38,24 @@ class Controller(object):
             steer = self.yawCont.get_steering(lin_vel, ang_vel, cur_vel)
 	    steer = self.lp_steering.filt(steer)
 
-	
+	'''
+        if throttle > 0.0:
+	    brake = 0.0
+	else:		
+	    
+	    deceleration = -throttle
+	    throttle = 0.0
+
+	    #if deceleration < brake_deadband:
+		#deceleration = 0
+
+	    brake = deceleration * (vehicle_mass + fuel_capacity*GAS_DENSITY) * wheel_radius
+	    
+            if throttle <= 0.01 or lin_vel == 0:
+            	brake = abs(throttle) * 2500
+            	throttle = 0.0
+
+	'''
         if throttle <= 0.01 or lin_vel == 0:
             brake = abs(throttle) * 2500
             throttle = 0.0

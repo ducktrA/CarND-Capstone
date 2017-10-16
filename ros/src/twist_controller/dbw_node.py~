@@ -102,7 +102,7 @@ class DBWNode(object):
             #                                                     <dbw status>,
             #                                                     <any other argument you need>)
 
-            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled, 1./self.frequency ,self.vehicle_mass, self.fuel_capacity, self.wheel_radius, self.brake_deadband)
+            throttle, brake, steering = self.controller.control(self.lin_vel, self.ang_vel, self.cur_linvel, self.is_dbw_enabled, 1./self.frequency ,self.vehicle_mass, self.fuel_capacity, self. )
 
 
             # steering = -0.2 --> vehicle goes to the right
