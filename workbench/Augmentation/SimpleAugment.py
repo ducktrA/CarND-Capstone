@@ -53,9 +53,10 @@ def adjust_gamma(image, gamma=1.0):
     # apply gamma correction using the lookup table
     return cv2.LUT(image, table)
 
+
 def create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, fname):
-    global annotated_images
-    path = annotated_images
+    
+    path = ""
 
     with tf.gfile.GFile(os.path.join(path, '{}'.format(fname)), 'rb') as fid:
         encoded_jpg = fid.read()
@@ -120,8 +121,10 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
     rois_d = {}
 
     for tag in tags:
-        directory = "./positives/*/*/*".format(tag)
+        directory = "./positives/*/{}/*".format(tag)
         rois_images = glob.glob(directory)
+
+        #print(rois_images)
 
         R = []
 
@@ -131,18 +134,21 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
 
         rois_d[tag] = np.array(R)
 
-    for i in range(amount):      
+    for k,v in rois_d.items():
+        print("tag: {0} elements: {1}".format(k, len(v)))
 
+
+    for i in range(amount):      
         for tag in tags:            
 
             r_rand = np.random.randint(0, len(rois_d[tag]))
             s_rand = np.random.randint(0, len(S))
             gamma = float(np.random.randint(50, 300)) / 100.
 
-            roi = R[r_rand]
+            roi = rois_d[tag][r_rand]
             scenery = adjust_gamma(S[s_rand], gamma)
         
-            scale_down = np.random.randint(10, 70) / 100.
+            scale_down = np.random.randint(30, 100) / 100.
             roi = cv2.resize(roi, (0,0), fx=scale_down, fy=scale_down)
         
             annotated_image = np.copy(scenery)
@@ -152,12 +158,12 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
             y_height = roi.shape[0]
             ymin = np.random.randint(10, scenery.shape[0] - y_height - 10)
             
-            filename = "%s_%d.jpg" % (tag, i)
+            filename = annotated_images + "%s_%d.jpg" % (tag, i)
             
             annotated_image[ymin:ymin+y_height,xmin:xmin+x_width ] = roi
             
             annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(annotated_images + filename, annotated_image)
+            cv2.imwrite(filename, annotated_image)
             
             #yaml = create_yaml_entry(tag, x_width, xmin, y_height, ymin, filename)
             csv = create_csv_entry(tag, labelmap, x_width, xmin, y_height, ymin, filename)
@@ -173,8 +179,8 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
 
 create_label_map(labelmap)
 
-simple_augment(tags, labelmap, scenery, metadata, "train", 800)
-simple_augment(tags, labelmap, scenery, metadata, "test", 100)
+simple_augment(tags, labelmap, scenery, metadata, "train", 500)
+simple_augment(tags, labelmap, scenery, metadata, "test", 50)
 
 with open("./annotation.csv", "w") as metadata_file:
     for line in metadata:
