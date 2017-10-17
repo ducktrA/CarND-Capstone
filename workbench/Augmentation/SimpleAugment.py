@@ -8,6 +8,7 @@ import io
 import tensorflow as tf
 from PIL import Image
 from object_detection.utils import dataset_util
+from random import shuffle
 
 SAMPLES_PER_TAG = 200
 metadata = []
@@ -42,21 +43,9 @@ def create_label_map(labelmap):
 
             lmpbtxt.write(t)
 
-
-def adjust_gamma(image, gamma=1.0):
-    # build a lookup table mapping the pixel values [0, 255] to
-    # their adjusted gamma values
-    invGamma = 1.0 / gamma
-    table = np.array([((i / 255.0) ** invGamma) * 255
-        for i in np.arange(0, 256)]).astype("uint8")
- 
-    # apply gamma correction using the lookup table
-    return cv2.LUT(image, table)
-
-
 def create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, fname):
-    
-    path = ""
+    global annotated_images
+    path = annotated_images
 
     with tf.gfile.GFile(os.path.join(path, '{}'.format(fname)), 'rb') as fid:
         encoded_jpg = fid.read()
@@ -97,14 +86,13 @@ def create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, fname):
     return tf_example
 
 def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
-    
-    print("building {0} dataset with {1} samples per traffic sign.".format(train_or_test, amount))
-
-    #directory = "./positives/*/{}/*".format("red")
+    directory = "./positives/*/{}/*".format("red")
 
     writer = tf.python_io.TFRecordWriter("{}.record".format(train_or_test))
 
     S = []
+    TFR = []
+
     scenery_files = glob.glob(scenery)
     print("found %d files in scenery directory %s" % (len(scenery_files), scenery))
 
@@ -113,42 +101,33 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (800,600), interpolation=cv2.INTER_CUBIC)
         S.append(img)
-        S.append(cv2.flip(img, 1))
+        S.append(cv2.flip(img,1))
         
     S = np.array(S)
 
     # Read X Vector
-    rois_d = {}
 
     for tag in tags:
         directory = "./positives/*/{}/*".format(tag)
+
         rois_images = glob.glob(directory)
-
-        #print(rois_images)
-
+        
         R = []
-
+        
         for r in rois_images:
             img = cv2.imread(r)
             R.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-
-        rois_d[tag] = np.array(R)
-
-    for k,v in rois_d.items():
-        print("tag: {0} elements: {1}".format(k, len(v)))
-
-
-    for i in range(amount):      
-        for tag in tags:            
-
-            r_rand = np.random.randint(0, len(rois_d[tag]))
-            s_rand = np.random.randint(0, len(S))
-            gamma = float(np.random.randint(50, 300)) / 100.
-
-            roi = rois_d[tag][r_rand]
-            scenery = adjust_gamma(S[s_rand], gamma)
         
-            scale_down = np.random.randint(30, 100) / 100.
+        R = np.array(R)
+        
+        for i in range(SAMPLES_PER_TAG):
+            r_rand = np.random.randint(0, len(R))
+            s_rand = np.random.randint(0, len(S))
+
+            roi = R[r_rand]
+            scenery = S[s_rand]
+        
+            scale_down = np.random.randint(10, 100) / 100.
             roi = cv2.resize(roi, (0,0), fx=scale_down, fy=scale_down)
         
             annotated_image = np.copy(scenery)
@@ -158,29 +137,31 @@ def simple_augment(tags, labelmap, scenery, metadata, train_or_test, amount):
             y_height = roi.shape[0]
             ymin = np.random.randint(10, scenery.shape[0] - y_height - 10)
             
-            filename = annotated_images + "%s_%d.jpg" % (tag, i)
+            filename = "%s_%d.jpg" % (tag, i)
             
             annotated_image[ymin:ymin+y_height,xmin:xmin+x_width ] = roi
             
             annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(filename, annotated_image)
+            cv2.imwrite(annotated_images + filename, annotated_image)
             
             #yaml = create_yaml_entry(tag, x_width, xmin, y_height, ymin, filename)
             csv = create_csv_entry(tag, labelmap, x_width, xmin, y_height, ymin, filename)
             tfrec = create_tf_record(tag, labelmap, x_width, xmin, y_height, ymin, filename)
 
-            writer.write(tfrec.SerializeToString())
-            metadata.append(csv)
+            #writer.write(tfrec.SerializeToString())
+            #metadata.append(csv)
+            TFR.append(tfrec.SerializeToString())
 
+    shuffle(TFR)
+
+    for tfr in TFR:
+        writer.write(tfr)
 
     writer.close()
 
-
+simple_augment(tags, labelmap, scenery, metadata, "train", 500)
 
 create_label_map(labelmap)
-
-simple_augment(tags, labelmap, scenery, metadata, "train", 500)
-simple_augment(tags, labelmap, scenery, metadata, "test", 50)
 
 with open("./annotation.csv", "w") as metadata_file:
     for line in metadata:
