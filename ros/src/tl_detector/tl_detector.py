@@ -504,6 +504,7 @@ class TLDetector(object):
         stop_line_positions = self.config['stop_line_positions']
         tl_close_min_dst = 50   # ignore traffic lights farer than that (range in m)
         tl_min_dst = 10   # ignore traffic lights closer than that (range in m)
+	tl_close_min_dst_yel = 30   # consider TL as red if it is yellow further than that (range in m)
         tl_close_fov_deg = 22.5 # ignore traffic lights with an bigger bearing than that (deg)
         tl_close_idx = -1       # will be set to the closest traffic light in the FOV and range
         tl_close_wp_idx = -1    # closest waypoint to the traffic light
@@ -531,14 +532,16 @@ class TLDetector(object):
                         tl_close_min_dst    = tl_dst
                         tl_close_hdg_deg    = tl_bearing
                         tls_pose = Pose()
-                        tls_pose.position.x = self.config['stop_line_positions'][idx][0]
-                        tls_pose.position.y = self.config['stop_line_positions'][idx][1]
+                        tls_pose.position.x = self.config['stop_line_positions'][tl_close_idx][0]
+                        tls_pose.position.y = self.config['stop_line_positions'][tl_close_idx][1]
                         tls_pose.position.z = 0
                         tl_close_wp_idx     = self.get_closest_waypoint(tls_pose)
         if tl_close_idx > -1:
             #light_state = self.lights[tl_close_idx].state
             light_state = self.get_light_state(self.lights[tl_close_idx], tl_close_min_dst)
-		    #print(light_state)
+	    if tl_dst > tl_close_min_dst_yel and light_state == TrafficLight.YELLOW:
+		light_state = TrafficLight.RED
+	    #print(light_state)
             # testing: set the light to red just to see whether the car is braking
         #rospy.loginfo("next tl = %d (%d)", tl_close_wp_idx, light_state)
         return tl_close_wp_idx, light_state
