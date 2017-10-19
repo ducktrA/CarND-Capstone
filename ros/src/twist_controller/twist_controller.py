@@ -39,9 +39,11 @@ class Controller(object):
 	    steer = self.lp_steering.filt(steer)
 
 	
-        if throttle <= 0.01 or lin_vel == 0:
-            brake = abs(throttle) * 2500
-            throttle = 0.0
+	if throttle <= 0.01 or lin_vel == 0:
+	    total_mass = vehicle_mass + fuel_capacity*GAS_DENSITY            
+	    torque = abs(throttle)*(total_mass*(wheel_radius*wheel_radius))
+	    brake = (torque/wheel_radius)
+	    throttle = 0.0
 	
 
         # Return throttle, brake, steer
