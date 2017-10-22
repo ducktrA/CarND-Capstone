@@ -1,12 +1,22 @@
 This is the project repo for the final project of the Udacity Self-Driving Car Nanodegree: Programming a Real Self-Driving Car. For more information about the project, see the project introduction [here](https://classroom.udacity.com/nanodegrees/nd013/parts/6047fe34-d93c-4f50-8336-b70ef10cb4b2/modules/e1a23b06-329a-4684-a717-ad476f0d8dff/lessons/462c933d-9f24-42d3-8bdc-a08a5fc866e4/concepts/5ab4b122-83e6-436d-850f-9f4d26627fd9).
 This repo is the place to work together.
 
+### Team Members of "Get Me Home" Team
+Istvan Marton		marton_i@hotmail.com
+Christian Grant		tcpip001@gmail.com
+Alessandro Gulli	alessandrogulli87@alice.it
+Oliver Witt 		oliver.witt@witt-or.de
+Adolf Hohl			adolf.hohl@gmail.com (team initiator)
+
+
 ### Approach
 We started off with getting the base setup. First goal is a moveing vehicle. The waypoint updater does its job and drive by wire as well.
-To accelerate development certain ros launch scripts were changed to have a respawn="true" tag. So we can kill the process and it gets reloaded by roslaunch instead of full shutdown/launch.
+
 
 ### Rough Work Plan
-Base to work in parallel is the ego vehicle going around the track. From there we currently see a few task: smoothing the path and controllers, collect learning data for traffic light, train traffic light ahead detection, train traffic light recognition using either SVM or a NN.
+Base to work in parallel is the ego vehicle going around the track. From there we currently seen a few tasks: smoothing the path and controllers, collect learning data for traffic light, train traffic light ahead detection, train traffic light recognition using either SVM or a NN.
+
+SVM/Hog would have solved traffic light localization and also detection. Detection performance was ok but not exciting. An implementation using opencv library would have been a good starting base. We tried a simple FCN approch to localize the traffic lights. That worked surprisingly good. However experiments with SSD have shown that their output is much more precise. The approach we sticked with was to use an SSD for the TL bounding box, but to detect the lights manually using HSV color spaces. This gits a good control about the distance between the classes as the balance of colored pixels expresses this. Independent of this approach we cropped and zoomed to the traffic light responsible for the specific lane. A time synchronization of the location information led to pretty smooth crops. Both approaches are used at the end to cross-validate.
 
 
 ### Native Installation
